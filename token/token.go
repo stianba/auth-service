@@ -21,8 +21,8 @@ type userClaims struct {
 	jwt.StandardClaims
 }
 
-// Data is the structure of signed token string and the expiry timestamp
-type Data struct {
+// Signed is the structure of signed token string and the expiry timestamp
+type Signed struct {
 	TokenString string
 	Expires     int64
 }
@@ -36,7 +36,7 @@ type UserPersistentData struct {
 var userContextKey userKey
 
 // Generate creates a new token and returns the signed string and expire timestamp
-func Generate(id bson.ObjectId, email string, permissionLevel int) (d Data, err error) {
+func Generate(id bson.ObjectId, email string, permissionLevel int) (s Signed, err error) {
 	expires := time.Now().Add(time.Hour * 24).Unix()
 
 	claims := userClaims{
@@ -55,8 +55,8 @@ func Generate(id bson.ObjectId, email string, permissionLevel int) (d Data, err 
 		return
 	}
 
-	d.TokenString = tokenString
-	d.Expires = expires
+	s.TokenString = tokenString
+	s.Expires = expires
 	return
 }
 

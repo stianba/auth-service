@@ -1,10 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"encoding/json"
 
 	"github.com/gorilla/mux"
 	"github.com/stianba/auth-service/token"
@@ -120,14 +120,14 @@ func getToken(s *mgo.Session) func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tokenData, err := token.Generate(user.ID, user.Email, user.PermissionLevel)
+		signed, err := token.Generate(user.ID, user.Email, user.PermissionLevel)
 
 		if err != nil {
 			errorWithJSON(w, "Couldn't generate token", http.StatusInternalServerError)
 			return
 		}
 
-		responseWithJSON(w, []byte(fmt.Sprintf("{\"message\":\"logged_in\",\"token\":\"%v\",\"expiresIn\":%d}", tokenData.TokenString, tokenData.Expires)), http.StatusOK)
+		responseWithJSON(w, []byte(fmt.Sprintf("{\"message\":\"logged_in\",\"token\":\"%v\",\"expiresIn\":%d}", signed.TokenString, signed.Expires)), http.StatusOK)
 	}
 }
 
