@@ -267,10 +267,16 @@ func main() {
 	session.SetMode(mgo.Monotonic, true)
 	ensureIndex(session)
 
+	port := os.Getenv("PORT")
+
+	if port == "" {
+		port = "1337"
+	}
+
 	router := mux.NewRouter()
 	router.Handle("/{id}", isAuthenticated(http.HandlerFunc(getOne(session)))).Methods("GET")
 	router.Handle("/{id}", isAuthenticated(http.HandlerFunc(update(session)))).Methods("PUT")
 	router.HandleFunc("/", create(session)).Methods("POST")
 	router.HandleFunc("/get-token", getToken(session)).Methods("POST")
-	http.ListenAndServe(":1338", router)
+	http.ListenAndServe(":"+port, router)
 }
