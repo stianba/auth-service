@@ -77,6 +77,10 @@ func isAuthenticated(next http.Handler) http.Handler {
 	})
 }
 
+func welcome(w http.ResponseWriter, r *http.Request) {
+	responseWithJSON(w, []byte(fmt.Sprintf("{\"message\":\"Welcome to awesome auth microservice\"}")), http.StatusOK)
+}
+
 func getToken(s *mgo.Session) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		err := r.ParseForm()
@@ -274,9 +278,10 @@ func main() {
 	}
 
 	router := mux.NewRouter()
-	router.Handle("/{id}", isAuthenticated(http.HandlerFunc(getOne(session)))).Methods("GET")
-	router.Handle("/{id}", isAuthenticated(http.HandlerFunc(update(session)))).Methods("PUT")
+	router.HandleFunc("/", welcome).Methods("GET")
 	router.HandleFunc("/", create(session)).Methods("POST")
 	router.HandleFunc("/get-token", getToken(session)).Methods("POST")
+	router.Handle("/{id}", isAuthenticated(http.HandlerFunc(getOne(session)))).Methods("GET")
+	router.Handle("/{id}", isAuthenticated(http.HandlerFunc(update(session)))).Methods("PUT")
 	http.ListenAndServe(":"+port, router)
 }
