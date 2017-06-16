@@ -268,6 +268,7 @@ func main() {
 		panic(err)
 	}
 
+	defer session.Close()
 	session.SetMode(mgo.Monotonic, true)
 	ensureIndex(session)
 
