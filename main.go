@@ -13,13 +13,15 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
+const collection string = "users"
+
 type user struct {
 	ID              bson.ObjectId `json:"_id" bson:"_id,omitempty"`
 	Name            string        `json:"name" bson:"name"`
 	Email           string        `json:"email" bson:"email"`
 	HashedPassword  []byte        `json:"-" bson:"hashedPassword"`
 	PermissionLevel int           `json:"permissionLevel" bson:"permissionLevel"`
-	Password        string        `json:"-" bson:",omitempty"`
+	Password        string        `json:"password" bson:",omitempty"`
 }
 
 func errorWithJSON(w http.ResponseWriter, err string, code int) {
@@ -38,7 +40,7 @@ func ensureIndex(s *mgo.Session) {
 	session := s.Copy()
 	defer session.Close()
 
-	c := session.DB(os.Getenv("DB")).C("users")
+	c := session.DB(os.Getenv("DB_NAME")).C(collection)
 
 	index := mgo.Index{
 		Key:        []string{"email"},
@@ -107,7 +109,7 @@ func getToken(s *mgo.Session) func(w http.ResponseWriter, r *http.Request) {
 
 		var user user
 
-		c := session.DB(os.Getenv("DB")).C("users")
+		c := session.DB(os.Getenv("DB_NAME")).C(collection)
 		err = c.Find(bson.M{"email": email}).One(&user)
 
 		if err != nil {
@@ -133,9 +135,6 @@ func getToken(s *mgo.Session) func(w http.ResponseWriter, r *http.Request) {
 
 func create(s *mgo.Session) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		session := s.Copy()
-		defer session.Close()
-
 		var user user
 
 		decoder := json.NewDecoder(r.Body)
@@ -148,10 +147,11 @@ func create(s *mgo.Session) func(w http.ResponseWriter, r *http.Request) {
 
 		if user.Name == "" || user.Email == "" || user.Password == "" {
 			errorWithJSON(w, "Missing fields", http.StatusBadRequest)
+			fmt.Println(user)
 			return
 		}
 
-		if user.PermissionLevel < 1 {
+		if user.PermissionLevel != 1 {
 			user.PermissionLevel = 1
 		}
 
@@ -165,7 +165,10 @@ func create(s *mgo.Session) func(w http.ResponseWriter, r *http.Request) {
 		user.Password = ""
 		user.HashedPassword = hash
 
-		c := session.DB(os.Getenv("DB")).C("users")
+		session := s.Copy()
+		defer session.Close()
+
+		c := session.DB(os.Getenv("DB_NAME")).C(collection)
 		err = c.Insert(&user)
 
 		if err != nil {
@@ -199,16 +202,63 @@ func getOne(s *mgo.Session) func(w http.ResponseWriter, r *http.Request) {
 
 		var user user
 
-		c := session.DB(os.Getenv("DB")).C("users")
+		c := session.DB(os.Getenv("DB_NAME")).C(collection)
 		c.FindId(bson.ObjectIdHex(id)).One(&user)
+
+		user.Password = "REDACTED"
 
 		jsonData, _ := json.Marshal(user)
 		responseWithJSON(w, jsonData, http.StatusOK)
 	}
 }
 
+func update(s *mgo.Session) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+
+		tokenData := token.GetContext(r)
+
+		if tokenData.PermissionLevel < 2 && id != tokenData.ID {
+			errorWithJSON(w, "You don't have the permissions to update other users", http.StatusForbidden)
+			return
+		}
+
+		var user user
+
+		decoder := json.NewDecoder(r.Body)
+		err := decoder.Decode(&user)
+
+		if err != nil {
+			errorWithJSON(w, "Incorrect body", http.StatusBadRequest)
+			return
+		}
+
+		session := s.Copy()
+		defer session.Close()
+
+		c := session.DB(os.Getenv("DB_NAME")).C(collection)
+		err = c.UpdateId(bson.ObjectIdHex(id), &user)
+
+		fmt.Println(id)
+
+		if err != nil {
+			switch err {
+			default:
+				errorWithJSON(w, "Database error", http.StatusInternalServerError)
+				return
+			case mgo.ErrNotFound:
+				errorWithJSON(w, "User not found", http.StatusNotFound)
+				return
+			}
+		}
+
+		responseWithJSON(w, []byte(fmt.Sprint("{\"message\":\"user_updated\"}")), http.StatusOK)
+	}
+}
+
 func main() {
-	session, err := mgo.Dial("localhost")
+	session, err := mgo.Dial(fmt.Sprintf("mongodb://%v:%v@%v/%v", os.Getenv("DB_USER"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_HOST"), os.Getenv("DB_NAME")))
 
 	if err != nil {
 		panic(err)
@@ -219,6 +269,7 @@ func main() {
 
 	router := mux.NewRouter()
 	router.Handle("/{id}", isAuthenticated(http.HandlerFunc(getOne(session)))).Methods("GET")
+	router.Handle("/{id}", isAuthenticated(http.HandlerFunc(update(session)))).Methods("PUT")
 	router.HandleFunc("/", create(session)).Methods("POST")
 	router.HandleFunc("/get-token", getToken(session)).Methods("POST")
 	http.ListenAndServe(":1338", router)
